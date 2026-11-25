@@ -320,7 +320,7 @@ mod tests {
         let today_start = 1795449600 - tz; // 2026-11-24 00:00 CST
         let now = today_start + 7 * 3600;
         let sample = format!(
-            r#"{{
+            r##"{{
               "data": {{
                 "cur_week_num": "13",
                 "list": [
@@ -328,7 +328,7 @@ mod tests {
                   {{"course_name":"数学分析","color":"#38bdf8","groups":[{{"loc":"达夫楼609","times":[[1,2,{},6000,3]]}}]}}
                 ]
               }}
-            }}"#,
+            }}"##,
             today_start + 8 * 3600,
             today_start + 86400 + 8 * 3600
         );
