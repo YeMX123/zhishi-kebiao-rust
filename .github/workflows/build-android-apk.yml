@@ -13,7 +13,8 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
-      - uses: taiki-e/install-action@cargo-ndk
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
 
       - name: Run Rust Unit Tests & Build Native .so
         working-directory: rust-core
