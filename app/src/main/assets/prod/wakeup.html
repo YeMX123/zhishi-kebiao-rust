@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<script>
+// Native AndroidBridge -> HB compatibility shim (enables native file chooser, 3-mode widget, custom widget bg, portal import)
+(function(){
+  if (!window.AndroidBridge) return;
+  window.HB = window.HB || {};
+  window.HB.Storage = {
+    getStorageSync: function(o){ return { data: window.AndroidBridge.getStorage(o && o.key ? o.key : '') }; },
+    setStorageSync: function(o){ window.AndroidBridge.setStorage(o && o.key ? o.key : '', o && o.value != null ? String(o.value) : ''); }
+  };
+  window.HB.Interface = {
+    navigateTo: function(o){ window.AndroidBridge.openPage(o.url || '', (o.topBar && o.topBar.title) || '知时课表', (o.topBar && o.topBar.backgroundColor) || '#0b1224', (o.topBar && o.topBar.titleColor) || '#f8fafc'); },
+    navigateBack: function(){ window.AndroidBridge.closePage(); },
+    navigateToCourse: function(o){ window.AndroidBridge.openPortal(o.url || '', o.initJs || ''); },
+    triggerWidgetAutoUpdate: function(){ window.AndroidBridge.refreshWidgets(); },
+    setNightModeSync: function(o){ window.AndroidBridge.setStatusBar(!!(o && o.nightMode)); },
+    setNightMode: function(o){ window.AndroidBridge.setStatusBar(!!(o && o.nightMode)); }
+  };
+  window.HB.Device = {
+    getClipboardData: function(o){ var t = window.AndroidBridge.getClipboard(); if (o && o.success) o.success({ data: t }); }
+  };
+})();
+</script>
+
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<title>导入 WakeUp / JSON 课表 · 知时课表</title>
+<style>
+:root {
+  --bg-mesh: radial-gradient(circle at 18% 12%, #172554 0%, #0b1224 52%, #070b16 100%);
+  --glass: rgba(15, 23, 42, 0.74);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-highlight: rgba(255, 255, 255, 0.08);
+  --pill: rgba(255, 255, 255, 0.08);
+  --text-1: #f8fafc; --text-2: #94a3b8; --text-3: #64748b;
+  --accent: #3b82f6; --emerald: #10b981;
+}
+[data-theme="light"] {
+  --bg-mesh: linear-gradient(160deg, #eef3fb 0%, #e1eaf8 100%);
+  --glass: rgba(255, 255, 255, 0.84);
+  --glass-border: rgba(15, 23, 42, 0.10);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --pill: rgba(15, 23, 42, 0.06);
+  --text-1: #0f172a; --text-2: #475569; --text-3: #64748b;
+  --accent: #2563eb; --emerald: #059669;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0; min-height: 100%;
+  background: var(--bg-mesh); color: var(--text-1);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif;
+}
+.page {
+  max-width: 520px; margin: 0 auto;
+  padding: max(14px, env(safe-area-inset-top)) 14px max(28px, env(safe-area-inset-bottom));
+}
+.card {
+  background: var(--glass); border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  border-radius: 18px; padding: 16px; margin-bottom: 12px;
+}
+.title { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+.desc { font-size: 12px; color: var(--text-2); line-height: 1.65; margin-bottom: 12px; }
+.step-box {
+  padding: 10px 12px; border-radius: 12px; background: var(--pill);
+  border: 1px solid var(--glass-border); font-size: 12px; color: var(--text-2);
+  line-height: 1.7; margin-bottom: 12px;
+}
+.step-box b { color: var(--text-1); }
+textarea {
+  width: 100%; min-height: 148px; padding: 11px 12px;
+  border-radius: 12px; border: 1px solid var(--glass-border);
+  background: var(--pill); color: var(--text-1); font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, monospace; resize: vertical;
+}
+.btn-row { display: flex; gap: 8px; margin-top: 10px; }
+.btn {
+  flex: 1; padding: 12px 10px; border-radius: 12px; border: none;
+  font-size: 13.5px; font-weight: 700; cursor: pointer;
+}
+.btn-emerald { background: linear-gradient(135deg, #059669, #10b981); color: #fff; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-secondary { background: var(--pill); color: var(--text-1); border: 1px solid var(--glass-border); }
+.preview-box {
+  margin-top: 10px; padding: 10px 12px; border-radius: 12px;
+  background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3);
+  font-size: 12px; line-height: 1.6; display: none;
+}
+.toast {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+  padding: 9px 16px; border-radius: 999px; background: rgba(15, 23, 42, 0.94);
+  color: #fff; font-size: 12.5px; font-weight: 600; opacity: 0; pointer-events: none;
+  transition: opacity 0.2s ease; z-index: 99; max-width: 88vw; text-align: center;
+}
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="card">
+    <div class="title">导入 WakeUp / JSON 课表</div>
+    <div class="desc">支持完整还原 <b>.wakeup_schedule</b> 与知时 <b>JSON</b> 备份中的课程、上课地点、教师、单双周、作息时间与开学日期。</div>
+
+    <div class="step-box">
+      <b>两步快速导入：</b><br/>
+      1. 在微信 / QQ / 文件管理器中用「文本查看器」打开 <b>.wakeup_schedule</b> 文件并全选复制；<br/>
+      2. 回到本页点击下方 <b>「一键读取剪贴板并导入」</b>，或长按文本框粘贴后点确认导入。
+    </div>
+
+    <label style="position:relative;display:block;width:100%;padding:22px 12px;margin-bottom:10px;border-radius:14px;border:1.5px dashed rgba(96,165,250,0.55);background:rgba(59,130,246,0.10);text-align:center;cursor:pointer">
+      <div style="font-size:14.5px;font-weight:700;color:var(--text-1)">📁 直接打开文件管理器选择 .wakeup_schedule / .json</div>
+      <div style="font-size:11.5px;color:var(--text-2);margin-top:4px" id="nativeFileLabel">原生文件选择 · 选中即自动解析导入</div>
+      <input type="file" accept="*/*" style="position:absolute;inset:0;opacity:0;width:100%;height:100%" onchange="onNativeWakeupFile(this)"/>
+    </label>
+
+    <textarea id="rawText" placeholder="也可直接长按此处粘贴 .wakeup_schedule 或 JSON 全部内容"></textarea>
+    <div class="preview-box" id="previewBox"></div>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="document.getElementById('rawText').value=''">清空内容</button>
+      <button class="btn btn-primary" onclick="parseAndImport()">✓ 确认导入课表</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem('cs_theme_v1') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+
+  var toastTimer = null;
+  function showToast(msg) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2400);
+  }
+
+  function buildPayloadFromText(raw) {
+    var txt = (raw || '').trim();
+    if (!txt) return null;
+    var lines = txt.split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean);
+    if (lines.length >= 5 && lines[0].charAt(0) === '{' && lines[1].charAt(0) === '[' && lines[3].charAt(0) === '[' && lines[4].charAt(0) === '[') {
+      var wkTimeNodes = JSON.parse(lines[1]);
+      var wkCfg = JSON.parse(lines[2]);
+      var wkCourses = JSON.parse(lines[3]);
+      var wkSlots = JSON.parse(lines[4]);
+      var metaMap = {};
+      for (var mi = 0; mi < wkCourses.length; mi++) metaMap[wkCourses[mi].id] = wkCourses[mi];
+
+      var ttId = wkCfg.timeTable || 1;
+      var maxSlotEnd = 0;
+      for (var si0 = 0; si0 < wkSlots.length; si0++) {
+        var eNode = (Number(wkSlots[si0].startNode) || 1) + Math.max(1, Number(wkSlots[si0].step) || 1) - 1;
+        if (eNode > maxSlotEnd) maxSlotEnd = eNode;
+      }
+      var realTimes = [];
+      for (var ti = 0; ti < wkTimeNodes.length; ti++) {
+        var tn = wkTimeNodes[ti];
+        if (tn.timeTable !== ttId || !tn.startTime || !tn.endTime) continue;
+        var sp = tn.startTime.split(':'), ep = tn.endTime.split(':');
+        var dur = ((+ep[0] * 60 + (+ep[1])) - (+sp[0] * 60 + (+sp[1])));
+        if (tn.node <= 16 && (dur >= 25 || tn.node <= maxSlotEnd)) realTimes.push([tn.startTime, tn.endTime]);
+      }
+
+      var startDate = '';
+      if (wkCfg.startDate) {
+        var sdP = String(wkCfg.startDate).split('-');
+        if (sdP.length === 3) startDate = sdP[0] + '-' + String(sdP[1]).padStart(2, '0') + '-' + String(sdP[2]).padStart(2, '0');
+      }
+
+      var imported = [];
+      for (var si = 0; si < wkSlots.length; si++) {
+        var sl = wkSlots[si];
+        var cm = metaMap[sl.id] || {};
+        var stP = Math.max(1, Number(sl.startNode) || 1);
+        var enP = Math.min(16, stP + Math.max(1, Number(sl.step) || 1) - 1);
+        imported.push({
+          id: 'wk_' + Date.now() + '_' + si,
+          name: cm.courseName || '未命名课程',
+          room: sl.room || '',
+          teacher: sl.teacher || '',
+          day: Math.min(7, Math.max(1, Number(sl.day) || 1)),
+          start: stP,
+          end: enP,
+          wStart: Math.max(1, Number(sl.startWeek) || 1),
+          wEnd: Math.min(30, Number(sl.endWeek) || 16),
+          parity: (sl.type === 1 || sl.type === 2) ? sl.type : 0,
+          color: (Number(sl.id) || si) % 8
+        });
+      }
+      return {
+        courses: imported,
+        meta: {
+          wakeupImport: true,
+          systemName: 'WakeUp 课表',
+          times: realTimes.length >= 8 ? realTimes.slice(0, 16) : null,
+          startDate: startDate,
+          totalWeeks: (wkCfg.maxWeek >= 1 && wkCfg.maxWeek <= 30) ? Number(wkCfg.maxWeek) : 20,
+          title: wkCfg.tableName ? ('我的课表 · ' + wkCfg.tableName) : ''
+        }
+      };
+    }
+
+    var parsed = JSON.parse(txt);
+    if (Array.isArray(parsed)) return { courses: parsed, meta: { wakeupImport: true, systemName: 'JSON 备份' } };
+    if (parsed && Array.isArray(parsed.courses)) {
+      return {
+        courses: parsed.courses,
+        meta: {
+          wakeupImport: true,
+          systemName: 'JSON 备份',
+          times: Array.isArray(parsed.times) && parsed.times.length >= 8 ? parsed.times : null,
+          startDate: parsed.startDate || '',
+          totalWeeks: parsed.totalWeeks || 0,
+          title: parsed.title || ''
+        }
+      };
+    }
+    return null;
+  }
+
+  function finishImport(payload) {
+    var pb = document.getElementById('previewBox');
+    pb.style.display = 'block';
+    pb.textContent = '识别成功：共 ' + payload.courses.length + ' 条课程时段'
+      + (payload.meta.times ? ('，' + payload.meta.times.length + ' 节作息') : '')
+      + (payload.meta.startDate ? ('，开学 ' + payload.meta.startDate) : '') + '，正在返回课表...';
+    var str = JSON.stringify(payload);
+    try {
+      if (window.HB && window.HB.Storage && typeof window.HB.Storage.setStorageSync === 'function') {
+        window.HB.Storage.setStorageSync({ key: 'cs_pending_import', value: str });
+      }
+    } catch (e) {}
+    try { localStorage.setItem('cs_pending_import', str); } catch (e) {}
+    showToast('已解析 ' + payload.courses.length + ' 条课程，正在返回...');
+    setTimeout(function () {
+      try {
+        if (window.HB && window.HB.Interface && typeof window.HB.Interface.navigateBack === 'function') {
+          window.HB.Interface.navigateBack({});
+          return;
+        }
+      } catch (e) {}
+      window.history.back();
+    }, 450);
+  }
+
+  function handleClipText(txt) {
+    if (!txt || !String(txt).trim()) { showToast('剪贴板为空，请先复制 .wakeup_schedule 内容'); return; }
+    document.getElementById('rawText').value = txt;
+    try {
+      var payload = buildPayloadFromText(txt);
+      if (payload && payload.courses.length) { finishImport(payload); return; }
+      showToast('已填入剪贴板内容，但未识别到课表格式，请检查是否全选复制');
+    } catch (e) {
+      showToast('剪贴板内容不是完整的 WakeUp / JSON 格式');
+    }
+  }
+
+  window.oneTapClipboardImport = function () {
+    // 1. Try native HB.Device clipboard bridge first
+    try {
+      if (window.HB && window.HB.Device) {
+        if (typeof window.HB.Device.getClipboardData === 'function') {
+          window.HB.Device.getClipboardData({
+            success: function (res) {
+              var v = (typeof res === 'string') ? res : (res && (res.data || res.text || res.content) ? (res.data || res.text || res.content) : '');
+              handleClipText(v);
+            },
+            fail: function () { fallbackWebClipboard(); }
+          });
+          return;
+        }
+        if (typeof window.HB.Device.getClipboard === 'function') {
+          var v2 = window.HB.Device.getClipboard({});
+          if (v2) { handleClipText(typeof v2 === 'string' ? v2 : (v2.data || v2.text || '')); return; }
+        }
+      }
+    } catch (e) {}
+    fallbackWebClipboard();
+  };
+
+  function fallbackWebClipboard() {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      navigator.clipboard.readText().then(handleClipText).catch(function () {
+        document.getElementById('rawText').focus();
+        showToast('请长按下方文本框手动点“粘贴”，再点“确认导入课表”');
+      });
+    } else {
+      document.getElementById('rawText').focus();
+      showToast('请长按下方文本框手动点“粘贴”，再点“确认导入课表”');
+    }
+  }
+
+  window.onNativeWakeupFile = function (inp) {
+    var f = inp && inp.files && inp.files[0];
+    if (!f) return;
+    document.getElementById('nativeFileLabel').textContent = '已选中：' + f.name;
+    var rd = new FileReader();
+    rd.onload = function (ev) {
+      var content = String((ev && ev.target && ev.target.result) || '');
+      document.getElementById('rawText').value = content;
+      try {
+        var payload = buildPayloadFromText(content);
+        if (payload && payload.courses.length) finishImport(payload);
+        else showToast('文件中未识别到课表数据');
+      } catch (e) { showToast('解析失败，请确认是完整的 .wakeup_schedule 或 JSON 文件'); }
+    };
+    rd.readAsText(f, 'utf-8');
+  };
+
+  window.parseAndImport = function () {
+    try {
+      var payload = buildPayloadFromText(document.getElementById('rawText').value);
+      if (!payload || !payload.courses.length) { showToast('未识别到有效课表数据'); return; }
+      finishImport(payload);
+    } catch (e) {
+      showToast('解析失败：请确认粘贴了完整的 .wakeup_schedule 或 JSON 内容');
+    }
+  };
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<script>
+// Native AndroidBridge -> HB compatibility shim (enables native file chooser, 3-mode widget, custom widget bg, portal import)
+(function(){
+  if (!window.AndroidBridge) return;
+  window.HB = window.HB || {};
+  window.HB.Storage = {
+    getStorageSync: function(o){ return { data: window.AndroidBridge.getStorage(o && o.key ? o.key : '') }; },
+    setStorageSync: function(o){ window.AndroidBridge.setStorage(o && o.key ? o.key : '', o && o.value != null ? String(o.value) : ''); }
+  };
+  window.HB.Interface = {
+    navigateTo: function(o){ window.AndroidBridge.openPage(o.url || '', (o.topBar && o.topBar.title) || '知时课表', (o.topBar && o.topBar.backgroundColor) || '#0b1224', (o.topBar && o.topBar.titleColor) || '#f8fafc'); },
+    navigateBack: function(){ window.AndroidBridge.closePage(); },
+    navigateToCourse: function(o){ window.AndroidBridge.openPortal(o.url || '', o.initJs || ''); },
+    triggerWidgetAutoUpdate: function(){ window.AndroidBridge.refreshWidgets(); },
+    setNightModeSync: function(o){ window.AndroidBridge.setStatusBar(!!(o && o.nightMode)); },
+    setNightMode: function(o){ window.AndroidBridge.setStatusBar(!!(o && o.nightMode)); }
+  };
+  window.HB.Device = {
+    getClipboardData: function(o){ var t = window.AndroidBridge.getClipboard(); if (o && o.success) o.success({ data: t }); }
+  };
+})();
+</script>
+
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<title>导入校历图片</title>
+<script>
+(function(){
+  try {
+    var t = localStorage.getItem('cs_theme_v2') || 'dark';
+    document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+  } catch(e) {}
+})();
+</script>
+<style>
+:root, html[data-theme="dark"] {
+  --bg: linear-gradient(180deg, #090f20 0%, #0d1629 100%);
+  --card: rgba(24, 30, 42, 0.72);
+  --card2: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.20);
+  --text1: #f8fafc;
+  --text2: #94a3b8;
+  --accent: #2563eb;
+  --accent2: #3b82f6;
+  --inp: rgba(15, 23, 42, 0.65);
+}
+html[data-theme="light"] {
+  --bg: linear-gradient(180deg, #f1f5fb 0%, #e9f0fa 100%);
+  --card: rgba(255, 255, 255, 0.76);
+  --card2: rgba(255, 255, 255, 0.85);
+  --border: rgba(15, 23, 42, 0.10);
+  --text1: #0f172a;
+  --text2: #475569;
+  --accent: #2563eb;
+  --accent2: #3b82f6;
+  --inp: rgba(255, 255, 255, 0.9);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0; min-height: 100%; background: var(--bg); color: var(--text1);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans", sans-serif;
+}
+.wrap { padding: 14px 14px 36px; max-width: 520px; margin: 0 auto; }
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+  padding: 14px; margin-bottom: 12px;
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.22), inset 0 1px 0 rgba(255,255,255,0.22);
+}
+.title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.sub { font-size: 12px; color: var(--text2); line-height: 1.45; }
+.preview-box {
+  margin-top: 12px; border-radius: 14px; overflow: hidden;
+  border: 1px dashed var(--border); background: var(--card2);
+  min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 10px; text-align: center;
+}
+.preview-box img {
+  max-width: 100%; max-height: 360px; border-radius: 10px; object-fit: contain; display: block;
+}
+.btn-row { display: flex; gap: 10px; margin-top: 12px; }
+.btn {
+  flex: 1; padding: 11px 12px; border-radius: 13px; border: none;
+  font-size: 14px; font-weight: 700; cursor: pointer; text-align: center;
+}
+.btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+.btn-emerald { background: linear-gradient(135deg, #059669, #10b981); color: #fff; }
+.btn-sec { background: var(--card2); color: var(--text1); border: 1px solid var(--border); }
+
+.form-row { margin-top: 10px; }
+.form-row label { display: block; font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 5px; }
+.inp, .ta {
+  width: 100%; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--inp); color: var(--text1); font-size: 14px; outline: none;
+}
+.ta { min-height: 76px; font-size: 12px; resize: vertical; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.status-pill {
+  margin-top: 12px; padding: 10px 12px; border-radius: 12px;
+  background: rgba(37, 99, 235, 0.16); border: 1px solid rgba(96, 165, 250, 0.32);
+  font-size: 13px; font-weight: 600; color: var(--text1); line-height: 1.5;
+}
+.toast {
+  position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%);
+  background: rgba(15,23,42,0.92); color: #fff; padding: 9px 16px;
+  border-radius: 999px; font-size: 13px; font-weight: 600;
+  opacity: 0; pointer-events: none; transition: opacity .2s; white-space: nowrap;
+}
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="title">🖼 校历图片导入与单双周适配</div>
+    <div class="sub">从相册选择本学期校历图片，软件会保存校历图供随时查阅，并自动识别或对照校准第 1 周周一日期与学期总周数，自动适配整学期单双周。</div>
+    <div class="preview-box" id="previewBox">
+      <div style="font-size:32px;margin-bottom:6px">📅</div>
+      <div class="sub">尚未选择校历图片</div>
+    </div>
+    <input id="fileInput" type="file" accept="image/*" style="display:none" onchange="onFilePicked(this)"/>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="pickCalendarImage()">🖼 选择校历图片</button>
+      <button class="btn btn-emerald" id="ocrBtn" onclick="runImageOcr()">✨ 自动识别校历</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="title">📝 粘贴校历文字自动解析（离线秒识别）</div>
+    <div class="sub">也可在手机相册长按校历图片提取文字后粘贴到下方，自动识别开学第一周周一与总周数：</div>
+    <div class="form-row">
+      <textarea class="ta" id="calText" placeholder="例如：2026-2027学年第一学期，8月31日正式上课，本学期共计20周..."></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-sec" onclick="parseCalendarText()">自动解析文字中的日期与周数</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="title">⚙ 本学期单双周参数确认</div>
+    <div class="grid2">
+      <div class="form-row">
+        <label>第 1 周周一日期</label>
+        <input class="inp" id="cStartDate" type="date" onchange="updatePreviewStatus()"/>
+      </div>
+      <div class="form-row">
+        <label>本学期总周数</label>
+        <input class="inp" id="cTotalWeeks" type="number" min="1" max="30" value="20" onchange="updatePreviewStatus()"/>
+      </div>
+    </div>
+    <div class="status-pill" id="statusPill">正在计算本周单双周状态...</div>
+    <div class="btn-row">
+      <button class="btn btn-sec" onclick="goBack()">返回</button>
+      <button class="btn btn-primary" onclick="applyCalendar()">保存并适配本学期单双周</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  var DATA_KEY = 'cs_schedule_data_v2';
+  var CAL_IMG_KEY = 'cs_calendar_img_v1';
+  var currentImgSrc = '';
+  var currentImgBase64 = '';
+
+  function showToast(msg) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(window.__tt);
+    window.__tt = setTimeout(function () { el.classList.remove('show'); }, 2200);
+  }
+
+  function toMonday(dateObj) {
+    var d = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+    var day = d.getDay() || 7;
+    d.setDate(d.getDate() - (day - 1));
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function loadInit() {
+    var sd = toMonday(new Date());
+    var tw = 20;
+    try {
+      var raw = localStorage.getItem(DATA_KEY);
+      if (raw) {
+        var st = JSON.parse(raw);
+        if (st.startDate) sd = st.startDate;
+        if (st.totalWeeks) tw = st.totalWeeks;
+      }
+      var savedImg = localStorage.getItem(CAL_IMG_KEY);
+      if (savedImg) {
+        currentImgSrc = savedImg;
+        renderImg(savedImg);
+      }
+    } catch (e) {}
+    document.getElementById('cStartDate').value = sd;
+    document.getElementById('cTotalWeeks').value = String(tw);
+    updatePreviewStatus();
+  }
+
+  function renderImg(src) {
+    var box = document.getElementById('previewBox');
+    box.innerHTML = '<img src="' + src + '" alt="校历图片" />';
+  }
+
+  function compressToDataUrl(imgSrc, cb) {
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var maxSide = 960;
+        var w = img.naturalWidth || img.width;
+        var h = img.naturalHeight || img.height;
+        if (w > maxSide || h > maxSide) {
+          var scale = maxSide / Math.max(w, h);
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+        }
+        var c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        var dataUrl = c.toDataURL('image/jpeg', 0.72);
+        cb(dataUrl);
+      } catch (e) { cb(''); }
+    };
+    img.onerror = function () { cb(''); };
+    img.src = imgSrc;
+  }
+
+  window.pickCalendarImage = function () {
+    try {
+      if (window.HB && window.HB.Photo && typeof window.HB.Photo.selectImages === 'function') {
+        window.HB.Photo.selectImages({
+          count: 1,
+          success: function (res) {
+            var uri = '';
+            if (typeof res === 'string') uri = res;
+            else if (res && res.compressUri) uri = res.compressUri;
+            else if (res && res.uri) uri = res.uri;
+            else if (res && res.data && res.data.compressUri) uri = res.data.compressUri;
+            if (uri) {
+              var src = uri.indexOf('file://') === 0 || uri.indexOf('data:') === 0 ? uri : ('file://' + uri);
+              currentImgSrc = src;
+              renderImg(src);
+              try { localStorage.setItem(CAL_IMG_KEY, src); } catch (e) {}
+              compressToDataUrl(src, function (b64) {
+                currentImgBase64 = b64;
+                if (b64) {
+                  try { localStorage.setItem(CAL_IMG_KEY, b64); } catch (e) {}
+                }
+              });
+              showToast('已导入校历图片，可点“自动识别校历”或直接确认下方日期');
+            }
+          },
+          fail: function () {
+            document.getElementById('fileInput').click();
+          }
+        });
+        return;
+      }
+    } catch (e) {}
+    document.getElementById('fileInput').click();
+  };
+
+  window.onFilePicked = function (inp) {
+    if (!inp.files || !inp.files[0]) return;
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      var dataUrl = ev.target.result;
+      compressToDataUrl(dataUrl, function (compressed) {
+        var finalUrl = compressed || dataUrl;
+        currentImgSrc = finalUrl;
+        currentImgBase64 = finalUrl;
+        renderImg(finalUrl);
+        try { localStorage.setItem(CAL_IMG_KEY, finalUrl); } catch (e) {}
+        showToast('已载入校历图片');
+      });
+    };
+    reader.readAsDataURL(inp.files[0]);
+  };
+
+  function extractFromText(txt) {
+    var s = String(txt || '');
+    var now = new Date();
+    var year = now.getFullYear();
+    var ym = s.match(/(20\d{2})\s*[-—/]\s*(20\d{2})/);
+    if (ym) {
+      // If spring semester mentioned, use second year; else first year
+      year = /第二学期|春季/.test(s) ? Number(ym[2]) : Number(ym[1]);
+    } else {
+      var y1 = s.match(/(20\d{2})\s*年/);
+      if (y1) year = Number(y1[1]);
+    }
+
+    var foundDate = null;
+    // Prefer date near 开学 / 上课 / 第一周 / 第1周
+    var kwMatch = s.match(/(?:第一周|第1周|正式上课|开学日?|行课)[^0-9]{0,12}(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?/);
+    if (!kwMatch) kwMatch = s.match(/(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?[^0-9]{0,12}(?:正式上课|开始上课|开学|第一周|第1周)/);
+    if (!kwMatch) kwMatch = s.match(/(?:20\d{2}\s*[年./-])?\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?/);
+    if (kwMatch) {
+      var m = Number(kwMatch[1]), d = Number(kwMatch[2]);
+      if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+        foundDate = toMonday(new Date(year, m - 1, d));
+      }
+    }
+
+    var foundWeeks = 0;
+    var wm = s.match(/(?:共计|共|总计|本学期)\s*(\d{1,2})\s*周/);
+    if (!wm) {
+      var allW = s.match(/\b(1[6-9]|2[0-5])\s*周/g);
+      if (allW && allW.length) {
+        var nums = allW.map(function (x) { return parseInt(x, 10); });
+        foundWeeks = Math.max.apply(null, nums);
+      }
+    } else {
+      foundWeeks = Number(wm[1]);
+    }
+
+    var updated = false;
+    if (foundDate) {
+      document.getElementById('cStartDate').value = foundDate;
+      updated = true;
+    }
+    if (foundWeeks >= 10 && foundWeeks <= 30) {
+      document.getElementById('cTotalWeeks').value = String(foundWeeks);
+      updated = true;
+    }
+    updatePreviewStatus();
+    return { updated: updated, foundDate: foundDate, foundWeeks: foundWeeks };
+  }
+
+  window.parseCalendarText = function () {
+    var txt = document.getElementById('calText').value.trim();
+    if (!txt) { showToast('请先粘贴校历文字'); return; }
+    var res = extractFromText(txt);
+    if (res.updated) {
+      showToast('解析成功：第1周周一 ' + (res.foundDate || '') + (res.foundWeeks ? (' · 共' + res.foundWeeks + '周') : ''));
+    } else {
+      showToast('未匹配到日期，请对照校历图在下方直接选择第1周周一');
+    }
+  };
+
+  window.runImageOcr = function () {
+    if (!currentImgSrc) { showToast('请先选择一张校历图片'); return; }
+    var btn = document.getElementById('ocrBtn');
+    btn.textContent = '识别中...';
+    function done(ok, msg) {
+      btn.textContent = '✨ 自动识别校历';
+      showToast(msg);
+    }
+    function doOcr(b64) {
+      if (!b64) { done(false, '无法读取图片像素，请对照上方校历图直接选择日期或粘贴文字'); return; }
+      try {
+        if (window.HB && window.HB.Network && typeof window.HB.Network.easyRequest === 'function') {
+          window.HB.Network.easyRequest({
+            url: 'https://api.ocr.space/parse/image',
+            method: 'POST',
+            headers: { 'apikey': 'helloworld', 'Content-Type': 'application/x-www-form-urlencoded' },
+            data: 'language=chs&OCREngine=2&base64Image=' + encodeURIComponent(b64),
+            success: function (res) {
+              try {
+                var obj = typeof res === 'string' ? JSON.parse(res) : res;
+                var parsedText = (obj && obj.ParsedResults && obj.ParsedResults[0] && obj.ParsedResults[0].ParsedText) || '';
+                if (parsedText) {
+                  document.getElementById('calText').value = parsedText;
+                  var r = extractFromText(parsedText);
+                  if (r.updated) {
+                    done(true, '校历图片识别成功！已自动填入第1周周一与周数');
+                    return;
+                  }
+                }
+              } catch (e) {}
+              done(false, '图片文字较密，已保留高清预览图，请对照上方校历点选第1周周一');
+            },
+            fail: function () {
+              done(false, '当前网络无法连接OCR服务，请对照上方校历图点选第1周周一');
+            }
+          });
+          return;
+        }
+      } catch (e) {}
+      done(false, '请对照上方校历图直接点选第1周周一日期');
+    }
+    if (currentImgBase64) doOcr(currentImgBase64);
+    else compressToDataUrl(currentImgSrc, doOcr);
+  };
+
+  window.updatePreviewStatus = function () {
+    var sd = document.getElementById('cStartDate').value;
+    var tw = Number(document.getElementById('cTotalWeeks').value) || 20;
+    if (!sd) return;
+    var p = sd.split('-');
+    var start = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    var now = new Date(); now.setHours(0, 0, 0, 0);
+    var diff = Math.floor((now - start) / 86400000);
+    var wk = Math.floor(diff / 7) + 1;
+    var pill = document.getElementById('statusPill');
+    if (wk < 1) {
+      pill.innerHTML = '按当前校历：尚未开学（距离第 1 周还有 ' + Math.abs(diff) + ' 天）<br/>第 1 周为<b>单周</b>，第 2 周为<b>双周</b>，将自动按周切换。';
+    } else if (wk > tw) {
+      pill.innerHTML = '按当前校历：已超过第 ' + tw + ' 周（假期中）';
+    } else {
+      var parity = (wk % 2 === 1) ? '单周' : '双周';
+      pill.innerHTML = '按当前校历：今天是 <b>第 ' + wk + ' 周（' + parity + '）</b> · 共 ' + tw + ' 周<br/>保存后将自动隐藏非' + parity + '课程并同步到桌面小部件。';
+    }
+  };
+
+  window.applyCalendar = function () {
+    var sd = document.getElementById('cStartDate').value;
+    var tw = Math.max(1, Math.min(30, Number(document.getElementById('cTotalWeeks').value) || 20));
+    if (!sd) { showToast('请选择第 1 周周一日期'); return; }
+    // Ensure Monday alignment
+    var p = sd.split('-');
+    var aligned = toMonday(new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])));
+    var payload = JSON.stringify({ startDate: aligned, totalWeeks: tw });
+    try {
+      if (window.HB && window.HB.Storage && typeof window.HB.Storage.setStorageSync === 'function') {
+        window.HB.Storage.setStorageSync({ key: 'cs_calendar_update', value: payload });
+      }
+      var raw = localStorage.getItem(DATA_KEY);
+      if (raw) {
+        var st = JSON.parse(raw);
+        st.startDate = aligned;
+        st.totalWeeks = tw;
+        localStorage.setItem(DATA_KEY, JSON.stringify(st));
+      }
+    } catch (e) {}
+    showToast('校历已保存，正在返回课表...');
+    setTimeout(goBack, 350);
+  };
+
+  window.goBack = function () {
+    try {
+      if (window.HB && window.HB.Interface && typeof window.HB.Interface.navigateBack === 'function') {
+        window.HB.Interface.navigateBack({});
+        return;
+      }
+    } catch (e) {}
+    window.history.back();
+  };
+
+  loadInit();
+})();
+</script>
+</body>
+</html>
