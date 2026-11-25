@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Zhishi" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">#090F20</item>
+        <item name="android:statusBarColor">#090F20</item>
+        <item name="android:navigationBarColor">#090F20</item>
+    </style>
+</resources>
